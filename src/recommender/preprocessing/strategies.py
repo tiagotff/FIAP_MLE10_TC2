@@ -10,23 +10,37 @@ from recommender.preprocessing.base import PreprocessingStrategy
 class RecencyFrequencyStrategy(PreprocessingStrategy):
     """Calcula features de recência e frequência de compra por par usuário-produto."""
 
-    def __init__(self) -> None:
-        self._global_mean_frequency: float | None = None
-
     def fit(self, raw_orders: pd.DataFrame) -> RecencyFrequencyStrategy:
-        """Armazena a frequência média global de compra para referência futura."""
-        counts = raw_orders.groupby(["user_id", "product_id"]).size()
-        self._global_mean_frequency = float(counts.mean())
+        """Não há estatísticas a aprender; retorna self por consistência."""
         return self
 
     def transform(self, raw_orders: pd.DataFrame) -> pd.DataFrame:
-        """Calcula purchase_count e days_since_last_order por usuário-produto."""
-        grouped = raw_orders.groupby(["user_id", "product_id"])
-        features = grouped.agg(
-            purchase_count=("order_id", "count"),
-            days_since_last_order=("days_since_prior_order", "min"),
+        """Calcula purchase_count e days_since_last_order por usuário-produto.
+
+        Usa `groupby(...).transform(...)` (não `agg`) para propagar a
+        estatística de volta a cada linha original, preservando o
+        número de linhas — essencial para concatenar com as demais
+        estratégias no `FeaturePipeline`.
+
+        Agrupa por uma chave combinada (`user_id * n_products + product_id`)
+        em vez de um groupby multi-coluna: evita o hashing de MultiIndex
+        do pandas, que consome bem mais memória em datasets grandes
+        (relevante para os ~32M registros do Instacart).
+        """
+        n_products = int(raw_orders["product_id"].max()) + 1
+        combined_key = (
+            raw_orders["user_id"].astype("int64") * n_products
+            + raw_orders["product_id"].astype("int64")
         )
-        return features.reset_index(drop=True)
+        grouped = raw_orders.groupby(combined_key)
+        purchase_count = grouped["order_id"].transform("count")
+        days_since_last_order = grouped["days_since_prior_order"].transform("min")
+        return pd.DataFrame(
+            {
+                "purchase_count": purchase_count,
+                "days_since_last_order": days_since_last_order,
+            }
+        ).reset_index(drop=True)
 
 
 class TemporalPatternStrategy(PreprocessingStrategy):

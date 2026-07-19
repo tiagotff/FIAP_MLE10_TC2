@@ -7,6 +7,7 @@ import pandas as pd
 from recommender.preprocessing.pipeline import FeaturePipeline
 from recommender.preprocessing.strategies import (
     BasketSizeStrategy,
+    RecencyFrequencyStrategy,
     TemporalPatternStrategy,
 )
 
@@ -38,6 +39,33 @@ def test_basket_size_strategy_counts_products_per_order() -> None:
     """A estratégia de tamanho de carrinho deve contar produtos por pedido."""
     features = BasketSizeStrategy().fit(_sample_orders()).transform(_sample_orders())
     assert features["basket_size"].tolist() == [2, 2, 1]
+
+
+def test_recency_frequency_strategy_preserves_row_count() -> None:
+    """A estratégia deve manter uma linha por registro original (não agregar)."""
+    orders = _sample_orders()
+    features = RecencyFrequencyStrategy().fit(orders).transform(orders)
+    assert len(features) == len(orders)
+    assert list(features.columns) == ["purchase_count", "days_since_last_order"]
+
+
+def test_recency_frequency_strategy_broadcasts_group_stats() -> None:
+    """purchase_count deve refletir a contagem do par usuário-produto, por linha."""
+    orders = _sample_orders()
+    features = RecencyFrequencyStrategy().fit(orders).transform(orders)
+    # user_id=10, product_id=100 aparece 1x; user_id=11, product_id=100 aparece 1x
+    assert features["purchase_count"].tolist() == [1, 1, 1]
+
+
+def test_feature_pipeline_with_all_three_strategies_preserves_row_count() -> None:
+    """Integração: as 3 estratégias combinadas não podem alterar o nº de linhas."""
+    orders = _sample_orders()
+    pipeline = FeaturePipeline(
+        [RecencyFrequencyStrategy(), TemporalPatternStrategy(), BasketSizeStrategy()]
+    )
+    features = pipeline.fit_transform(orders)
+    assert len(features) == len(orders)
+    assert not features.isna().any().any()
 
 
 def test_feature_pipeline_concatenates_all_strategies() -> None:
