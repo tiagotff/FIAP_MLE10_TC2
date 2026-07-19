@@ -1,25 +1,21 @@
-[project]
+[tool.poetry]
 name = "recommender"
 version = "0.1.0"
 description = "Sistema de recomendação de produtos e-commerce — FIAP MLE10 Tech Challenge Fase 02"
-requires-python = ">=3.11,<3.13"
-authors = [
-    { name = "Tiago de Freitas Faustino", email = "tiago.faustino@redeoba.com.br" },
-]
-dependencies = [
-    "torch (>=2.3,<3.0)",
-    "scikit-learn (>=1.5,<2.0)",
-    "mlflow (>=2.15,<3.0)",
-    "dvc (>=3.55,<4.0)",
-    "pandas (>=2.2,<3.0)",
-    "numpy (>=1.26,<2.0)",
-    "pydantic (>=2.8,<3.0)",
-    "pydantic-settings (>=2.4,<3.0)",
-    "pyyaml (>=6.0,<7.0)",
-]
-
-[tool.poetry]
+authors = ["Tiago de Freitas Faustino <tiago.faustino@redeoba.com.br>"]
 packages = [{ include = "recommender", from = "src" }]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+torch = ">=2.3,<3.0"
+scikit-learn = ">=1.5,<2.0"
+mlflow = ">=2.15,<3.0"
+dvc = ">=3.55,<4.0"
+pandas = ">=2.2,<3.0"
+numpy = ">=1.26,<2.0"
+pydantic = ">=2.8,<3.0"
+pydantic-settings = ">=2.4,<3.0"
+pyyaml = ">=6.0,<7.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"
