@@ -26,9 +26,13 @@ src/recommender/
   data/           # InstacartReorderDataset (torch.utils.data.Dataset)
   config/         # dataclasses de config (modelo/treino) + Settings (Pydantic, .env)
   training/       # loop de treino, métricas, early stopping (Etapa 4)
+  pipeline/       # scripts do DVC: preprocess, feature_eng, train, evaluate
 tests/            # testes unitários (pytest)
 scripts/          # validate_env.py — validação do ambiente local
 configs/          # model.yaml, training.yaml
+Dockerfile        # build multi-stage (builder + runtime)
+docker-compose.yml # serviço MLflow + serviço de treino
+dvc.yaml          # pipeline DVC (preprocess → feature_eng → train → evaluate)
 data/             # raw/ e processed/ (versionados via DVC, não via git)
 models/           # artefatos de modelo treinado (não versionados via git)
 ```
@@ -52,11 +56,34 @@ models/           # artefatos de modelo treinado (não versionados via git)
 - [x] **Etapa 2 — Ambiente e Dependências**: `pyproject.toml` com Poetry
       (dependências de prod/dev separadas), lock file commitado, Settings
       via Pydantic (`.env`), script de validação de ambiente.
-- [ ] **Etapa 3 — Containerização e Versionamento**: Dockerfile multi-stage,
-      docker-compose (treino + MLflow), DVC (pipeline com ≥3 stages).
-- [ ] **Etapa 4 — Rede Neural, Registry e Entrega**: treino completo,
-      comparação com baselines Scikit-Learn, MLflow Model Registry, Model
-      Card, vídeo STAR.
+- [x] **Etapa 3 — Containerização e Versionamento**: Dockerfile
+      multi-stage (builder + runtime), `docker-compose.yml` (MLflow +
+      treino), pipeline DVC com 4 estágios (`preprocess → feature_eng →
+      train → evaluate`), MLflow tracking (params/métricas/artefatos por
+      run), remote local do DVC configurado.
+- [ ] **Etapa 4 — Rede Neural, Registry e Entrega**: comparação com
+      baselines Scikit-Learn, MLflow Model Registry, Model Card, vídeo
+      STAR.
+
+## Pipeline de dados e treino (DVC)
+
+```bash
+# Coloque os CSVs do Instacart em data/raw/ antes de rodar:
+# orders.csv, order_products__prior.csv, order_products__train.csv,
+# products.csv, aisles.csv, departments.csv
+
+dvc repro          # roda os 4 estágios (preprocess → feature_eng → train → evaluate)
+dvc dag            # visualiza o grafo de dependências
+dvc metrics show   # mostra as métricas gravadas em data/metrics.json
+```
+
+## Rodando via Docker
+
+```bash
+docker compose up --build
+```
+Sobe o servidor MLflow (`http://localhost:5001`) e roda o treino
+containerizado, com `data/` e `models/` montados como volumes.
 
 ## Instalação e configuração do ambiente
 
