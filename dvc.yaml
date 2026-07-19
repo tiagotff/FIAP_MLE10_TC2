@@ -1,0 +1,45 @@
+stages:
+  preprocess:
+    cmd: python -m recommender.pipeline.preprocess
+    deps:
+      - src/recommender/pipeline/preprocess.py
+      - data/raw/orders.csv
+      - data/raw/order_products__prior.csv
+    outs:
+      - data/processed/orders_merged.parquet
+
+  feature_eng:
+    cmd: python -m recommender.pipeline.feature_eng
+    deps:
+      - src/recommender/pipeline/feature_eng.py
+      - src/recommender/preprocessing
+      - data/processed/orders_merged.parquet
+    outs:
+      - data/processed/features_train.parquet
+      - data/processed/features_val.parquet
+      - models/user_encoder.joblib
+      - models/product_encoder.joblib
+      - models/vocab_sizes.json
+
+  train:
+    cmd: python -m recommender.pipeline.train
+    deps:
+      - src/recommender/pipeline/train.py
+      - src/recommender/pipeline/common.py
+      - src/recommender/models
+      - data/processed/features_train.parquet
+      - data/processed/features_val.parquet
+      - configs/model.yaml
+      - configs/training.yaml
+    outs:
+      - models/model.pt
+
+  evaluate:
+    cmd: python -m recommender.pipeline.evaluate
+    deps:
+      - src/recommender/pipeline/evaluate.py
+      - models/model.pt
+      - data/processed/features_val.parquet
+    metrics:
+      - data/metrics.json:
+          cache: false
