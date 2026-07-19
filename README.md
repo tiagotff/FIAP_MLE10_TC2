@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Sistema de Recomendação de Produtos — FIAP MLE10 Tech Challenge (Fase 02)
 
 Sistema de recomendação de produtos de e-commerce baseado no comportamento de
@@ -72,6 +71,3 @@ python -m pytest -q
 - Nenhum script solto gerando notebook — projeto todo em módulos `src/`
 - Vídeo STAR será hospedado em YouTube/Vimeo/Drive e apenas linkado no
   README, não commitado no repositório
-=======
-# FIAP_MLE10_TC12
->>>>>>> bc2c3e5c1b08636729db015d7be51c590a865258
