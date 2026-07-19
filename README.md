@@ -63,3 +63,11 @@ pip install ruff pytest torch pandas numpy
 ruff check .
 python -m pytest -q
 ```
+
+## Aprendizados aplicados do TC1 (churn)
+
+- Aplicação mais rigorosa de SOLID desde a primeira linha (feedback do TC1
+  apontou uso raso dos princípios)
+- Nenhum script solto gerando notebook — projeto todo em módulos `src/`
+- Vídeo STAR será hospedado em YouTube/Vimeo/Drive e apenas linkado no
+  README, não commitado no repositório
