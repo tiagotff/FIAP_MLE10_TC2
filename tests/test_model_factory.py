@@ -30,7 +30,7 @@ def test_factory_creates_hybrid_mlp() -> None:
 
 def test_factory_raises_on_unknown_model_type() -> None:
     """O Factory deve levantar ValueError para model_type desconhecido."""
-    with pytest.raises(ValueError, match="Unknown model_type"):
+    with pytest.raises(ValueError, match="desconhecido"):
         ModelFactory.create(_build_config(model_type="does_not_exist"))
 
 

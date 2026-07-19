@@ -42,7 +42,8 @@ class ModelFactory:
         if builder is None:
             known = ", ".join(sorted(cls._registry))
             raise ValueError(
-                f"Unknown model_type '{config.model_type}'. Known types: {known}"
+                f"model_type '{config.model_type}' desconhecido. "
+                f"Tipos conhecidos: {known}"
             )
         return builder(config)
 
