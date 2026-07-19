@@ -1,0 +1,13 @@
+# Hiperparâmetros de treino
+# Consumido por TrainingConfig na Etapa 2 (wiring via Pydantic Settings)
+
+learning_rate: 0.001
+batch_size: 512
+max_epochs: 30
+early_stopping_patience: 5
+random_seed: 42
+metrics:
+  - auc_roc
+  - recall
+  - precision
+  - f1

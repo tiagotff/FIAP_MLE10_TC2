@@ -1,0 +1,13 @@
+# Configuração de arquitetura do modelo híbrido (embeddings + MLP)
+# Consumida por HybridModelConfig na Etapa 2 (wiring via Pydantic Settings)
+
+model_type: hybrid_mlp
+
+embedding:
+  user_embedding_dim: 32
+  product_embedding_dim: 32
+
+mlp:
+  hidden_dims: [128, 64, 32]
+  dropout: 0.3
+  use_batchnorm: true
