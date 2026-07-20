@@ -1,4 +1,4 @@
 [core]
-    remote = localremote
-['remote "localremote"']
-    url = ../../dvc-storage
+    remote = gcpremote
+['remote "gcpremote"']
+    url = gs://instacart-recommender-tc2-dvc
