@@ -196,6 +196,27 @@ def _prepare_training(
     return train_loader, val_loader, model, optimizer, criterion, model_config
 
 
+def _resolve_run_config(
+    processed_dir: Path | None,
+    models_dir: Path | None,
+    training_config: TrainingConfig | None,
+) -> tuple[Path, Path, TrainingConfig, str]:
+    """Resolve overrides contra os defaults das Settings; inicializa seed e MLflow.
+
+    Returns:
+        Tupla `(processed_dir, models_dir, training_config, device)`.
+    """
+    settings = get_settings()
+    processed_dir = processed_dir or Path(settings.data_processed_dir)
+    models_dir = models_dir or Path(settings.models_dir)
+    training_config = training_config or load_training_config()
+
+    torch.manual_seed(training_config.random_seed)
+    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+    mlflow.set_experiment("instacart-recommender")
+    return processed_dir, models_dir, training_config, settings.device
+
+
 def run(
     processed_dir: Path | None = None,
     models_dir: Path | None = None,
@@ -211,16 +232,9 @@ def run(
     Returns:
         Caminho do arquivo de pesos do modelo salvo.
     """
-    settings = get_settings()
-    processed_dir = processed_dir or Path(settings.data_processed_dir)
-    models_dir = models_dir or Path(settings.models_dir)
-    training_config = training_config or load_training_config()
-    device = settings.device
-
-    torch.manual_seed(training_config.random_seed)
-    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-    mlflow.set_experiment("instacart-recommender")
-
+    processed_dir, models_dir, training_config, device = _resolve_run_config(
+        processed_dir, models_dir, training_config
+    )
     train_loader, val_loader, model, optimizer, criterion, model_config = (
         _prepare_training(processed_dir, models_dir, training_config, device)
     )
