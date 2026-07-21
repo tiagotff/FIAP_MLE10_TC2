@@ -7,7 +7,7 @@ packages = [{ include = "recommender", from = "src" }]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
-torch = ">=2.3,<3.0"
+torch = {version = ">=2.3,<3.0", source = "pytorch-cpu"}
 scikit-learn = ">=1.5,<2.0"
 mlflow = ">=2.15,<3.0"
 dvc = {extras = ["gs"], version = "^3.67.1"}
@@ -21,6 +21,12 @@ pyyaml = ">=6.0,<7.0"
 pytest = "^8.3"
 ruff = "^0.6"
 pre-commit = "^3.8"
+
+
+[[tool.poetry.source]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "explicit"
 
 [build-system]
 requires = ["poetry-core>=1.9.0"]
