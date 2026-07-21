@@ -185,8 +185,10 @@ alimentando um ranking de sugestões no momento da compra.
 
 Pré-requisitos: **Python 3.11 ou 3.12**, [Poetry](https://python-poetry.org/),
 **Git**, conta no [Kaggle](https://www.kaggle.com/) (para baixar o
-dataset). Docker + Docker Compose são opcionais, apenas para rodar
-containerizado.
+dataset), [Google Cloud CLI](https://cloud.google.com/sdk/docs/install)
+autenticado (`gcloud auth application-default login`) para sincronizar
+dados com o remote do DVC no GCS. Docker + Docker Compose são opcionais,
+apenas para rodar containerizado.
 
 ### 1. Clonar o repositório
 
@@ -299,6 +301,19 @@ completo. O código já usa dtypes reduzidos (`int32`/`int8`/`float32`) e
 `pd.factorize` em vez de `LabelEncoder` para minimizar o uso de memória,
 mas datasets desse porte exigem alguns GB livres.
 
+**`Unknown project id` ao rodar `gcloud storage buckets create`.**
+O projeto GCP ainda não existe — `gcloud config set project` só troca o
+contexto padrão, não cria o projeto. Rode primeiro
+`gcloud projects create instacart-recommender-tc2 --name="Instacart
+Recommender TC2"`, depois `gcloud config set project
+instacart-recommender-tc2`.
+
+**`dvc push`/`dvc pull` falham com erro de permissão no GCS.**
+A autenticação expirou ou nunca foi feita nesta máquina. Rode
+`gcloud auth application-default login` e tente de novo. Se o projeto
+usar uma service account (ex.: em CI), configure com `dvc remote modify
+gcpremote credentialpath /caminho/para/chave.json` em vez disso.
+
 ## Pipeline de dados e treino (DVC)
 
 ```
@@ -318,18 +333,21 @@ CPU, e `early_stopping_patience` exige uma melhora mínima de AUC (não
 qualquer variação de ruído) para não parar o treino cedo demais nem
 tarde demais.
 
-**Versionamento de dados:** o remote do DVC está configurado como uma
-pasta local (`../dvc-storage`, fora do repositório):
+**Versionamento de dados:** o remote do DVC está configurado no
+**Google Cloud Storage** (`gs://instacart-recommender-tc2-dvc`, projeto
+`instacart-recommender-tc2`) — mesmo padrão usado no Tech Challenge 1
+(projeto de churn):
 
 ```bash
-poetry run dvc push   # sincroniza .dvc/cache com o remote
+poetry run dvc push   # sincroniza .dvc/cache com o bucket no GCS
 poetry run dvc pull   # traz os dados versionados de volta (em uma máquina nova)
 ```
 
-O projeto também foi validado com um remote no Google Cloud Storage
-durante o desenvolvimento (mesmo padrão usado no Tech Challenge 1 —
-projeto de churn), revertido para local por ser o formato exigido nesta
-entrega.
+Requer autenticação prévia via `gcloud auth application-default login`
+(ou uma service account, configurada com `dvc remote modify gcpremote
+credentialpath ...`). Durante o desenvolvimento, o projeto também foi
+validado com um remote local (`../dvc-storage`) — útil como alternativa
+caso o acesso ao GCP não esteja disponível.
 
 ## Rodando via Docker
 
