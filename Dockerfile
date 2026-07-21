@@ -21,6 +21,14 @@ RUN poetry install --only main --no-interaction
 # nem cache de build.
 FROM python:3.11-slim AS runtime
 
+# git: só o binário (não copiamos .git/ para a imagem — isso infla a
+# imagem à toa e não é necessário em produção). Instalá-lo evita o
+# warning do MLflow sobre "Git executable not found"; sem um repositório
+# .git presente, o MLflow simplesmente não anexa o SHA do commit às
+# runs, sem erro.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system app && useradd --system --gid app app
 
 WORKDIR /app
