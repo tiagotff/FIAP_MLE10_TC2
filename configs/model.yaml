@@ -1,5 +1,9 @@
 # Configuração de arquitetura do modelo híbrido (embeddings + MLP)
-# Consumida por HybridModelConfig na Etapa 2 (wiring via Pydantic Settings)
+# Consumida por build_model_config() em src/recommender/pipeline/common.py.
+# As dimensões de embedding e a arquitetura da MLP vêm daqui; a
+# cardinalidade do vocabulário (num_users/num_products) é descoberta
+# automaticamente a partir de models/vocab_sizes.json, gerado pelo
+# estágio feature_eng do DVC.
 
 model_type: hybrid_mlp
 

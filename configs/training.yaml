@@ -2,14 +2,15 @@
 # Consumido por load_training_config() em train.py, a partir da Etapa 3.
 #
 # batch_size alto reduz drasticamente o número de iterações por época
-# em CPU (dataset tem ~26M linhas de treino): 512 gera ~50.600
-# batches/época; 32768 gera ~790 — muito mais rápido. O modelo é
-# pequeno (embeddings de 32 dims + MLP raso), então o gargalo real é
-# overhead de iteração em Python, não capacidade de cômputo — batches
-# grandes atacam exatamente esse gargalo.
-# max_epochs reduzido: nos testes o AUC de validação já estabiliza por
-# volta da 2ª-3ª época; early_stopping_patience=2 interrompe assim que
-# parar de melhorar, então o treino tende a acabar bem antes do teto.
+# em CPU (dataset tem ~26M linhas de treino): com batch_size=512 seriam
+# ~50.600 batches/época; com 131072 são só ~200 — bem mais rápido, já
+# que o modelo é pequeno (embeddings de 32 dims + MLP raso) e o gargalo
+# real é overhead de iteração em Python, não capacidade de cômputo.
+# max_epochs alto (30) serve só como teto de segurança: na prática o
+# AUC de validação estabiliza cedo, e early_stopping_patience=3 exige
+# uma melhora mínima de AUC para resetar a paciência — evita que o
+# treino continue rodando indefinidamente por causa de ruído estatístico
+# entre épocas.
 
 learning_rate: 0.001
 batch_size: 131072
