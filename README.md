@@ -364,6 +364,24 @@ resolve as dependências via Poetry, e o estágio `runtime` final carrega
 só o ambiente virtual já resolvido e o código-fonte, sem ferramentas de
 build, rodando como usuário não-root.
 
+**Otimização de tamanho da imagem:** a imagem final passou por duas
+otimizações que juntas reduziram o tamanho em ~75% (de 8,83 GB para
+2,18 GB):
+
+- **PyTorch CPU-only**: o `pyproject.toml` aponta o `torch` para o
+  índice `https://download.pytorch.org/whl/cpu` — sem isso, o Poetry
+  resolve a build com CUDA completo, que embute bibliotecas NVIDIA
+  (`nvidia-cublas`, `nvidia-cudnn`, etc.) somando vários GB, inúteis
+  aqui já que o projeto roda em CPU (`device: cpu` nas Settings).
+- **DVC fora da imagem**: `dvc` mora num grupo Poetry separado
+  (`[tool.poetry.group.cli]`), não no grupo `main`. Nenhum script em
+  `src/recommender` importa `dvc` — é só a ferramenta de linha de
+  comando que orquestra o pipeline, e o `Dockerfile` instala apenas
+  `--only main`, então ela nunca entra na imagem. Continua instalada
+  normalmente no ambiente local (`poetry install`, sem `--only`,
+  instala todos os grupos), então `poetry run dvc repro` funciona
+  igual.
+
 ## Testes automatizados
 
 ```bash
