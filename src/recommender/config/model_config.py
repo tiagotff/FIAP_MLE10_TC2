@@ -1,8 +1,12 @@
 """Schemas de configuração para arquitetura de modelo e treino.
 
-A Etapa 2 vai conectar essas classes a variáveis de ambiente via Pydantic
-Settings. Por enquanto, são dataclasses simples e tipadas, usadas pelo
-Factory e pelo pipeline de treino.
+Dataclasses tipadas usadas pelo `ModelFactory` e pelo pipeline de treino.
+São carregadas a partir de `configs/model.yaml` e `configs/training.yaml`
+(ver `recommender.pipeline.common.load_model_config` e
+`recommender.pipeline.train.load_training_config`) — não devem ser
+confundidas com `recommender.config.settings.Settings`, que cobre
+configurações de ambiente de execução (`.env`), não hiperparâmetros de
+modelo/treino.
 """
 
 from __future__ import annotations
