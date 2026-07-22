@@ -5,6 +5,7 @@ Carregado uma única vez, na subida da API — não a cada requisição.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import joblib
@@ -22,6 +23,7 @@ class InferenceService:
         self.device = device
         self._user_index = self._load_id_index(models_dir / "user_encoder.joblib")
         self._product_index = self._load_id_index(models_dir / "product_encoder.joblib")
+        self._metrics = self._load_metrics(models_dir / "model_metrics.json")
 
         self.model_config = build_model_config(models_dir)
         self.model = ModelFactory.create(self.model_config).to(device)
@@ -36,14 +38,22 @@ class InferenceService:
         encoder = joblib.load(encoder_path)
         return {int(raw_id): idx for idx, raw_id in enumerate(encoder.classes_)}
 
+    @staticmethod
+    def _load_metrics(metrics_path: Path) -> dict[str, float]:
+        """Carrega as métricas de avaliação do modelo, se o arquivo existir."""
+        if not metrics_path.exists():
+            return {}
+        return json.loads(metrics_path.read_text())
+
     def info(self) -> dict:
-        """Metadados do modelo carregado, para o endpoint `/model/info`."""
+        """Metadados do modelo carregado, para o endpoint `/metadata`."""
         return {
             "num_users": self.model_config.embedding.num_users,
             "num_products": self.model_config.embedding.num_products,
             "embedding_dim": self.model_config.embedding.user_embedding_dim,
             "mlp_hidden_dims": list(self.model_config.mlp.hidden_dims),
             "feature_columns": list(FEATURE_COLUMNS),
+            "metrics": self._metrics,
         }
 
     def encode_ids(self, user_id: int, product_id: int) -> tuple[int, int] | None:

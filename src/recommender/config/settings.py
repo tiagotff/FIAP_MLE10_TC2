@@ -55,6 +55,14 @@ class Settings(BaseSettings):
             "(a API não deve depender do tracking server estar no ar)."
         ),
     )
+    model_bucket: str | None = Field(
+        default=None,
+        description=(
+            "Bucket GCS de onde a API baixa os artefatos do modelo na "
+            "subida. Se None, usa os artefatos já presentes localmente "
+            "em `models_dir` (desenvolvimento local)."
+        ),
+    )
 
 
 def get_settings() -> Settings:

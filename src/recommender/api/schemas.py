@@ -56,7 +56,10 @@ class BatchPredictRequest(BaseModel):
     """Payload de entrada para predição em lote (um forward pass só)."""
 
     items: list[PredictRequest] = Field(
-        ..., min_length=1, description="Lista de pares usuário-produto a avaliar."
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Lista de pares usuário-produto a avaliar (máx. 500).",
     )
 
     model_config = {
@@ -72,30 +75,46 @@ class BatchPredictResponse(BaseModel):
     )
 
 
-class ModelInfoResponse(BaseModel):
-    """Metadados do modelo atualmente carregado pela API."""
-
-    model_version: str = Field(..., description="Versão servida (tag de deploy).")
-    num_users: int = Field(..., description="Nº de usuários no vocabulário de treino.")
-    num_products: int = Field(
-        ..., description="Nº de produtos no vocabulário de treino."
-    )
-    embedding_dim: int = Field(
-        ..., description="Dimensão dos embeddings de usuário/produto."
-    )
-    mlp_hidden_dims: list[int] = Field(
-        ..., description="Tamanhos das camadas ocultas da MLP."
-    )
-    feature_columns: list[str] = Field(
-        ..., description="Ordem esperada das features tabulares no `predict`."
-    )
-
-
 class HealthResponse(BaseModel):
-    """Resposta do endpoint de health check."""
+    """Resposta do endpoint de liveness (`/health`) — não depende do modelo."""
 
-    status: str = Field(..., description="'ok' quando o modelo já está carregado.")
-    model_version: str = Field(..., description="Versão do modelo servido.")
+    status: str = Field(..., description="'ok' enquanto o processo estiver vivo.")
+
+
+class ReadyResponse(BaseModel):
+    """Resposta do endpoint de readiness (`/ready`) — depende do modelo carregado."""
+
+    status: str = Field(..., description="'ready' quando o modelo já foi carregado.")
+    model_loaded: bool = Field(..., description="Se o modelo já está pronto para uso.")
+
+
+class ModelMetadataInfo(BaseModel):
+    """Bloco de metadados do modelo dentro de `/metadata`."""
+
+    model_version: str
+    num_users: int
+    num_products: int
+    embedding_dim: int
+    mlp_hidden_dims: list[int]
+    metrics: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Métricas de avaliação do modelo (auc_roc, recall, etc.), "
+            "se disponíveis."
+        ),
+    )
+
+
+class MetadataResponse(BaseModel):
+    """Metadados completos do modelo em produção + contrato de entrada/saída."""
+
+    model_info: ModelMetadataInfo
+    input_schema: dict = Field(
+        ..., description="JSON Schema esperado por POST /predict."
+    )
+    output_schema: dict = Field(
+        ..., description="JSON Schema retornado por POST /predict."
+    )
 
 
 class ErrorResponse(BaseModel):

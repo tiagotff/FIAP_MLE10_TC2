@@ -1,11 +1,12 @@
 # Dockerfile da API de inferência — separado do Dockerfile de treino
-# para não levar fastapi/uvicorn (nem o modelo treinado) para a imagem
-# que só roda o pipeline de treino.
+# para não levar fastapi/uvicorn/prometheus/google-cloud-storage para a
+# imagem que só roda o pipeline de treino.
 #
-# Pré-requisito: rodar o pipeline de treino localmente (ou `dvc pull`)
-# antes do build, para que models/ tenha model.pt + encoders +
-# vocab_sizes.json — esse build empacota (bake-in) o modelo já
-# treinado na imagem, em vez de carregá-lo dinamicamente em runtime.
+# Não embute o modelo treinado: os artefatos são baixados de um bucket
+# GCS na subida do processo (ver src/recommender/api/model_registry.py e
+# a variável de ambiente MODEL_BUCKET), assim promover um modelo novo
+# não exige rebuild/redeploy da imagem — só atualizar o bucket (ver
+# scripts/upload_model_to_gcs.sh) e reiniciar o serviço.
 
 # ---- Stage 1: builder ----
 FROM python:3.11-slim AS builder
@@ -32,7 +33,10 @@ WORKDIR /app
 COPY --from=builder /app/.venv ./.venv
 COPY --from=builder /app/src ./src
 COPY configs ./configs
-COPY models ./models
+
+# Diretório onde os artefatos do modelo serão baixados em runtime
+# (ver MODEL_BUCKET) — precisa existir e ser gravável pelo usuário `app`.
+RUN mkdir -p /app/models && chown app:app /app/models
 
 ARG MODEL_VERSION=unknown
 ENV MODEL_VERSION=${MODEL_VERSION} \

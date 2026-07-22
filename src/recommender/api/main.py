@@ -1,33 +1,49 @@
 """API HTTP de inferência (FastAPI): serve predições de recompra.
 
-Executada via `uvicorn recommender.api.main:app`. Carrega o modelo e os
-encoders uma única vez, na subida do processo — não a cada requisição.
+Segue a convenção de plataformas de model serving em produção (KServe,
+Seldon, BentoML): endpoints distintos para liveness, readiness,
+inferência, metadados e métricas operacionais.
 
 Endpoints:
-    GET  /          — informações básicas e link para a documentação.
-    GET  /health     — health check (usado pelo Cloud Run).
-    GET  /model/info — metadados do modelo carregado.
-    POST /predict    — predição para um par usuário-produto.
-    POST /predict/batch — predição em lote (um único forward pass).
+    GET  /              — informações básicas e links para os demais.
+    GET  /health         — liveness: o processo está vivo?
+    GET  /ready           — readiness: o modelo está carregado?
+    GET  /metadata         — versão/métricas do modelo + JSON Schema.
+    GET  /metrics            — métricas operacionais (formato Prometheus).
+    POST /predict              — predição para um par usuário-produto.
+    POST /predict/batch          — predição em lote (até 500 itens).
 """
 
 from __future__ import annotations
 
+import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 
 from recommender.api.inference import InferenceService
+from recommender.api.logging_config import logger
+from recommender.api.metrics import (
+    record_prediction,
+    record_request,
+    render_prometheus_metrics,
+)
+from recommender.api.model_registry import sync_model_from_gcs
 from recommender.api.schemas import (
     BatchPredictRequest,
     BatchPredictResponse,
     ErrorResponse,
     HealthResponse,
-    ModelInfoResponse,
+    MetadataResponse,
+    ModelMetadataInfo,
     PredictRequest,
     PredictResponse,
+    ReadyResponse,
 )
 from recommender.config.settings import get_settings
 
@@ -41,9 +57,12 @@ _COLD_START_DETAIL = (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ANN201
-    """Carrega o modelo na subida da API; libera recursos ao encerrar."""
+    """Baixa o modelo (se `MODEL_BUCKET` setado) e o carrega na subida da API."""
     global _service
-    _service = InferenceService(Path(_settings.models_dir), _settings.device)
+    models_dir = Path(_settings.models_dir)
+    sync_model_from_gcs(_settings.model_bucket, models_dir)
+    _service = InferenceService(models_dir, _settings.device)
+    logger.info("Modelo carregado e API pronta.")
     yield
     _service = None
 
@@ -62,6 +81,46 @@ app = FastAPI(
     license_info={"name": "MIT"},
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def observability_middleware(request: Request, call_next):  # noqa: ANN001, ANN201
+    """Adiciona request-id/latência aos headers, loga e registra métricas."""
+    request_id = str(uuid.uuid4())
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start
+
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time-Ms"] = f"{duration * 1000:.2f}"
+    record_request(request.method, request.url.path, response.status_code, duration)
+    logger.info(
+        "Requisição concluída.",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": round(duration * 1000, 2),
+        },
+    )
+    return response
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Captura qualquer exceção não tratada; nunca expõe detalhes ao cliente."""
+    logger.exception("Erro não tratado.", extra={"path": request.url.path})
+    return JSONResponse(
+        status_code=500, content={"detail": "Erro interno. Tente novamente."}
+    )
+
 
 def _require_service() -> InferenceService:
     """Garante que o modelo já carregou; levanta 503 caso contrário."""
@@ -77,32 +136,51 @@ def root() -> dict[str, Any]:
         "name": "Instacart Recommender API",
         "docs": "/docs",
         "health": "/health",
+        "ready": "/ready",
         "model_version": _settings.model_version,
     }
 
 
 @app.get(
-    "/health",
-    tags=["Meta"],
-    summary="Health check",
-    response_model=HealthResponse,
+    "/health", tags=["Meta"], summary="Liveness probe", response_model=HealthResponse
 )
 def health() -> HealthResponse:
-    """Endpoint de health check (usado pelo Cloud Run e por monitoramento)."""
-    status_value = "ok" if _service is not None else "loading"
-    return HealthResponse(status=status_value, model_version=_settings.model_version)
+    """Liveness — confirma que o processo está vivo (rápido, não depende do modelo)."""
+    return HealthResponse(status="ok")
 
 
 @app.get(
-    "/model/info",
-    tags=["Meta"],
-    summary="Metadados do modelo carregado",
-    response_model=ModelInfoResponse,
+    "/ready", tags=["Meta"], summary="Readiness probe", response_model=ReadyResponse
 )
-def model_info() -> ModelInfoResponse:
-    """Retorna arquitetura e vocabulário do modelo atualmente em produção."""
+def ready() -> ReadyResponse:
+    """Readiness — confirma que o modelo está carregado e pronto para inferência."""
+    loaded = _service is not None
+    return ReadyResponse(status="ready" if loaded else "loading", model_loaded=loaded)
+
+
+@app.get(
+    "/metadata",
+    tags=["Meta"],
+    summary="Metadados do modelo + JSON Schema de entrada/saída",
+    response_model=MetadataResponse,
+)
+def metadata() -> MetadataResponse:
+    """Versão/métricas do modelo em produção, e o contrato de `/predict`."""
     service = _require_service()
-    return ModelInfoResponse(model_version=_settings.model_version, **service.info())
+    return MetadataResponse(
+        model_info=ModelMetadataInfo(
+            model_version=_settings.model_version, **service.info()
+        ),
+        input_schema=PredictRequest.model_json_schema(),
+        output_schema=PredictResponse.model_json_schema(),
+    )
+
+
+@app.get("/metrics", tags=["Meta"], summary="Métricas operacionais (Prometheus)")
+def metrics() -> Response:
+    """Métricas operacionais da API, no formato de texto do Prometheus."""
+    body, content_type = render_prometheus_metrics()
+    return Response(content=body, media_type=content_type)
 
 
 @app.post(
@@ -122,8 +200,8 @@ def predict(request: PredictRequest) -> PredictResponse:
     if encoded is None:
         raise HTTPException(status_code=422, detail=_COLD_START_DETAIL)
 
-    features = _feature_list(request)
-    probability = service.predict(*encoded, features)
+    probability = service.predict(*encoded, _feature_list(request))
+    record_prediction(probability)
     return PredictResponse(
         reorder_probability=probability, model_version=_settings.model_version
     )
@@ -132,7 +210,7 @@ def predict(request: PredictRequest) -> PredictResponse:
 @app.post(
     "/predict/batch",
     tags=["Predição"],
-    summary="Prevê a recompra para vários pares usuário-produto de uma vez",
+    summary="Prevê a recompra para até 500 pares usuário-produto de uma vez",
     response_model=BatchPredictResponse,
     status_code=status.HTTP_200_OK,
 )
@@ -147,6 +225,9 @@ def predict_batch(request: BatchPredictRequest) -> BatchPredictResponse:
         (item.user_id, item.product_id, _feature_list(item)) for item in request.items
     ]
     probabilities = service.predict_batch(raw_items)
+    for probability in probabilities:
+        record_prediction(probability)
+
     results = [
         PredictResponse(reorder_probability=p, model_version=_settings.model_version)
         for p in probabilities
