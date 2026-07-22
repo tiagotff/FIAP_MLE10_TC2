@@ -28,9 +28,7 @@ def _log_and_register_model(
     """Recarrega os melhores pesos salvos e registra a versão no Registry."""
     model = ModelFactory.create(model_config).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
-    mlflow.pytorch.log_model(
-        model, artifact_path="model", serialization_format="pickle"
-    )
+    mlflow.pytorch.log_model(model, artifact_path="model")
 
     run_id = mlflow.active_run().info.run_id
     model_uri = f"runs:/{run_id}/model"
