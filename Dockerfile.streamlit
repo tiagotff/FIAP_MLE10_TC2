@@ -1,0 +1,35 @@
+# Dockerfile do dashboard Streamlit — separado dos Dockerfiles de treino
+# e da API, já que o dashboard só consome a API via HTTP (não precisa de
+# torch/mlflow/fastapi). app/ não é um pacote Poetry instalado, só
+# código copiado direto — por isso um único `poetry install` já basta.
+
+# ---- Stage 1: builder ----
+FROM python:3.11-slim AS builder
+
+ENV POETRY_VERSION=1.8.3 \
+    POETRY_VIRTUALENVS_IN_PROJECT=true \
+    PIP_NO_CACHE_DIR=1
+
+RUN pip install "poetry==${POETRY_VERSION}"
+
+WORKDIR /app
+COPY pyproject.toml poetry.lock ./
+RUN poetry install --only dashboard --no-root --no-interaction
+
+# ---- Stage 2: runtime ----
+FROM python:3.11-slim AS runtime
+
+RUN groupadd --system app && useradd --system --gid app app
+
+WORKDIR /app
+COPY --from=builder /app/.venv ./.venv
+COPY app ./app
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1
+
+USER app
+
+EXPOSE 8080
+# $PORT é injetado pelo Cloud Run (default local: 8080)
+CMD ["sh", "-c", "streamlit run app/streamlit_app.py --server.port=${PORT:-8080} --server.address=0.0.0.0"]

@@ -1,0 +1,14 @@
+# Config explícita do Cloud Build para o dashboard — mesmo motivo do
+# cloudbuild.api.yaml: `gcloud builds submit --tag` sozinho só builda
+# um arquivo chamado exatamente "Dockerfile".
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-f"
+      - "Dockerfile.streamlit"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/recommender-dashboard"
+      - "."
+images:
+  - "gcr.io/$PROJECT_ID/recommender-dashboard"
