@@ -87,8 +87,8 @@ stages:
       size: 2271
     - path: src/recommender/pipeline/train.py
       hash: md5
-      md5: cea44c6230ef3fdc50ccf3d2a8954a94
-      size: 9388
+      md5: 029be5d34b5c917bf9a06343607b682f
+      size: 9524
     outs:
     - path: models/model.pt
       hash: md5
