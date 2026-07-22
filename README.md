@@ -93,12 +93,14 @@ poetry run dvc metrics show
 - [Troubleshooting](#troubleshooting)
 - [Pipeline de dados e treino (DVC)](#pipeline-de-dados-e-treino-dvc)
 - [Rodando via Docker](#rodando-via-docker)
+- [API de inferência](#api-de-inferência)
 - [Testes automatizados](#testes-automatizados)
 - [Dataset](#dataset)
 - [Arquitetura do modelo](#arquitetura-do-modelo)
 - [Design patterns aplicados](#design-patterns-aplicados)
 - [Resultados](#resultados)
 - [MLflow Model Registry](#mlflow-model-registry)
+- [Deploy em nuvem (bônus)](#deploy-em-nuvem-bônus)
 - [Model Card](MODEL_CARD.md)
 - [Licença](#licença)
 - [Equipe](#equipe)
@@ -127,7 +129,7 @@ alimentando um ranking de sugestões no momento da compra.
 | **1** | Clean Code e Estrutura (SOLID, design patterns, linting) | ✅ Concluída |
 | **2** | Ambiente e Dependências (Poetry, lock file, `.env`, validação) | ✅ Concluída |
 | **3** | Containerização e Versionamento (Docker, DVC, MLflow tracking) | ✅ Concluída |
-| **4** | Rede Neural, Registry e Entrega (baselines, Model Registry, Model Card, vídeo STAR) | ⏳ Em andamento — baseline ✅, Model Registry ✅, Model Card ✅, README ⏳, vídeo STAR ⏳ |
+| **4** | Rede Neural, Registry e Entrega (baselines, Model Registry, Model Card, vídeo STAR) | ⏳ Em andamento — baseline ✅, Model Registry ✅, Model Card ✅, API + deploy ✅, README ✅, vídeo STAR ⏳ |
 
 ## Estrutura do repositório
 
@@ -141,10 +143,18 @@ alimentando um ranking de sugestões no momento da compra.
 │   └── processed/                # Parquets gerados pelo pipeline (não versionado em git — via DVC)
 ├── models/                       # Artefatos de modelo treinado (não versionado em git — via DVC)
 ├── scripts/
-│   └── validate_env.py           # Validação do ambiente local
+│   ├── validate_env.py           # Validação do ambiente local
+│   └── upload_model_to_gcs.sh    # Publica os artefatos do modelo no bucket GCS (deploy)
 ├── src/
 │   └── recommender/
 │       ├── __init__.py
+│       ├── api/
+│       │   ├── main.py             # App FastAPI (/, /health, /ready, /predict, /predict/batch, /metadata, /metrics)
+│       │   ├── schemas.py          # Schemas Pydantic (request/response)
+│       │   ├── inference.py        # Carrega modelo/encoders e executa predições
+│       │   ├── model_registry.py   # Baixa artefatos do modelo via Cloud Storage (deploy)
+│       │   ├── metrics.py          # Métricas operacionais (Prometheus) para /metrics
+│       │   └── logging_config.py   # Logging estruturado (JSON), sem print()
 │       ├── config/
 │       │   ├── model_config.py   # Dataclasses de config (modelo, treino)
 │       │   └── settings.py       # Settings via Pydantic (.env)
@@ -170,8 +180,15 @@ alimentando um ranking de sugestões no momento da compra.
 ├── tests/
 │   ├── test_model_factory.py     # Testes do ModelFactory
 │   ├── test_preprocessing_strategies.py  # Testes das estratégias + integração
-│   └── test_settings.py          # Testes das Settings (Pydantic)
-├── Dockerfile                    # Build multi-stage (builder + runtime)
+│   ├── test_settings.py          # Testes das Settings (Pydantic)
+│   ├── test_hybrid_mlp.py        # Forward pass do HybridMlpRecommender
+│   ├── test_dataset.py           # InstacartReorderDataset
+│   ├── test_baseline.py          # Baseline Scikit-Learn
+│   ├── test_registry.py          # Lógica de promoção do Model Registry (MLflow)
+│   ├── test_api.py               # Endpoints da API (FastAPI TestClient)
+│   └── test_model_registry.py    # Download de artefatos via GCS (mockado)
+├── Dockerfile                    # Build multi-stage (builder + runtime) — treino
+├── Dockerfile.api                # Build multi-stage — API de inferência
 ├── docker-compose.yml            # Serviço MLflow + serviço de treino
 ├── dvc.yaml                      # Pipeline DVC (preprocess → feature_eng → train/baseline → evaluate)
 ├── .dvc/config                   # Configuração do remote do DVC
@@ -389,6 +406,148 @@ otimizações que juntas reduziram o tamanho em ~75% (de 8,83 GB para
   instala todos os grupos), então `poetry run dvc repro` funciona
   igual.
 
+## API de inferência
+
+O modelo em **Production** no MLflow Model Registry é servido via uma
+API FastAPI (`src/recommender/api/`), seguindo a convenção adotada por
+plataformas de model serving em produção (KServe, Seldon, BentoML,
+MLflow Serving): endpoints distintos para liveness, readiness,
+inferência, metadados e métricas operacionais.
+
+### 1. Ter um modelo treinado
+
+A API precisa dos artefatos em `models/` (`model.pt`,
+`user_encoder.joblib`, `product_encoder.joblib`, `vocab_sizes.json`) —
+gerados pelo pipeline (`poetry run dvc repro`), ou baixados de um bucket
+GCS (ver [Deploy em nuvem](#deploy-em-nuvem-bônus)).
+
+### 2. Iniciar a API
+
+```bash
+poetry run uvicorn recommender.api.main:app --reload
+```
+
+A API fica disponível em `http://127.0.0.1:8000`. Documentação
+interativa (Swagger UI) em `http://127.0.0.1:8000/docs` — dá para testar
+todos os endpoints abaixo direto no navegador.
+
+### Endpoints
+
+| Endpoint | Método | Propósito |
+|---|---|---|
+| `/` | GET | Informações básicas e links para os demais endpoints |
+| `/health` | GET | **Liveness** — o processo está vivo? (não depende do modelo) |
+| `/ready` | GET | **Readiness** — o modelo está carregado e pronto para inferência? |
+| `/predict` | POST | Predição de recompra para **um** par usuário-produto |
+| `/predict/batch` | POST | Predição para **até 500** pares em uma chamada (um único forward pass) |
+| `/metadata` | GET | Versão/métricas do modelo + JSON Schema de entrada/saída de `/predict` |
+| `/metrics` | GET | Métricas operacionais da API no formato Prometheus |
+
+**`GET /health`** — liveness probe simples, sempre rápida:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+```json
+{"status": "ok"}
+```
+
+**`GET /ready`** — readiness probe: confirma que o modelo está
+carregado. Diferente de `/health` — a API pode estar viva mas ainda não
+pronta (ex.: durante o carregamento do modelo):
+
+```bash
+curl http://127.0.0.1:8000/ready
+```
+```json
+{"status": "ready", "model_loaded": true}
+```
+
+**`GET /metadata`** — versão/métricas do modelo em produção + o JSON
+Schema esperado por `/predict` (útil para descobrir o contrato da API
+programaticamente):
+
+```bash
+curl http://127.0.0.1:8000/metadata
+```
+```json
+{
+  "model_info": {
+    "model_version": "1", "num_users": 206209, "num_products": 49677,
+    "embedding_dim": 32, "mlp_hidden_dims": [128, 64, 32],
+    "metrics": {"auc_roc": 0.9045, "recall": 0.9876, "precision": 0.7879, "f1": 0.8765}
+  },
+  "input_schema": { "...": "JSON Schema completo dos campos aceitos por /predict" },
+  "output_schema": { "...": "JSON Schema da resposta de /predict" }
+}
+```
+
+**`GET /metrics`** — métricas operacionais (contagem de requisições,
+latência por rota, predições por faixa de probabilidade), no formato
+texto do Prometheus:
+
+```bash
+curl http://127.0.0.1:8000/metrics
+```
+```
+recommender_api_requests_total{method="POST",path="/predict",status_code="200"} 12.0
+recommender_api_request_latency_seconds_sum{method="POST",path="/predict"} 0.58
+recommender_predictions_total{reorder_likelihood="high"} 7.0
+recommender_predictions_total{reorder_likelihood="low"} 5.0
+```
+
+**`POST /predict`** — recebe um par usuário-produto e retorna a
+probabilidade de recompra:
+
+```bash
+curl -X POST http://127.0.0.1:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": 1, "product_id": 196, "purchase_count": 3,
+    "days_since_last_order": 7, "order_hour_of_day": 10,
+    "order_dow": 2, "basket_size": 8
+  }'
+```
+```json
+{"reorder_probability": 0.73, "model_version": "1"}
+```
+
+`user_id`/`product_id` fora do vocabulário de treino (cold-start)
+retornam **HTTP 422**, com uma mensagem clara, antes de chegar à lógica
+de inferência.
+
+**`POST /predict/batch`** — mesma predição, para até 500 pares em uma
+única chamada; itens cold-start retornam `reorder_probability: null`
+em vez de derrubar a requisição inteira:
+
+```bash
+curl -X POST http://127.0.0.1:8000/predict/batch \
+  -H "Content-Type: application/json" \
+  -d '{"items": [{ "...": "mesmo formato do /predict, um objeto por item" }]}'
+```
+```json
+{"results": [{"reorder_probability": 0.73, "model_version": "1"}]}
+```
+
+### Outros detalhes da API
+
+- Toda requisição é logada em formato estruturado (JSON,
+  `src/recommender/api/logging_config.py` — nenhum módulo de produção
+  usa `print()`), registrada nas métricas Prometheus, e recebe os
+  headers `X-Request-ID` e `X-Process-Time-Ms` via middleware.
+- **CORS** habilitado — a API pode ser consumida diretamente de um
+  frontend/navegador.
+- Qualquer erro inesperado (não relacionado à validação de entrada) é
+  capturado por um handler genérico e retorna **HTTP 500** com uma
+  mensagem padrão — detalhes internos nunca são expostos na resposta,
+  apenas registrados no log estruturado.
+- **Model registry via GCS** (`src/recommender/api/model_registry.py`):
+  se a variável de ambiente `MODEL_BUCKET` estiver definida, a API baixa
+  os artefatos do modelo de um bucket GCS na subida, em vez de exigir
+  que estejam embutidos na imagem — promover um modelo novo em produção
+  é só atualizar o bucket (`scripts/upload_model_to_gcs.sh`) e reiniciar
+  o serviço, sem rebuild/redeploy da imagem Docker.
+
 ## Testes automatizados
 
 ```bash
@@ -403,8 +562,12 @@ Para incluir relatório de cobertura, adicione
 | `tests/test_model_factory.py` | `ModelFactory` instancia o modelo correto a partir da config, levanta erro para `model_type` desconhecido, e aceita registro de novos modelos (Open/Closed) |
 | `tests/test_preprocessing_strategies.py` | Cada `PreprocessingStrategy` isoladamente, **e** o `FeaturePipeline` com as três estratégias combinadas — teste de integração que garante que o número de linhas se preserva ao concatenar features de estratégias diferentes |
 | `tests/test_settings.py` | `Settings` carrega defaults corretos e respeita override por variável de ambiente |
+| `tests/test_hybrid_mlp.py` | Forward pass do `HybridMlpRecommender`: shape de saída, valores finitos, respeita dimensão de features configurada |
+| `tests/test_dataset.py` | `InstacartReorderDataset`: `__len__`, `__getitem__`, construção via `from_dataframe` e via arrays numpy |
 | `tests/test_baseline.py` | Treino e cálculo de métricas do baseline (Regressão Logística) |
 | `tests/test_registry.py` | Lógica de promoção do Model Registry (Staging sempre, Production só se melhor que a atual) — via `MlflowClient` simulado |
+| `tests/test_api.py` | Endpoints `/`, `/health`, `/ready`, `/metadata`, `/metrics`, `/predict` e `/predict/batch` (válido, cold-start, limite de 500 itens), headers de observabilidade, CORS |
+| `tests/test_model_registry.py` | Download dos artefatos do modelo via Cloud Storage (mockado) — inclusive o caso de arquivo opcional ausente |
 
 ## Dataset
 
@@ -503,6 +666,45 @@ Consulte as versões registradas na UI do MLflow
 (`http://localhost:5001` → aba **Models**).
 
 ---
+
+## Deploy em nuvem (bônus)
+
+A API pode ser implantada no **Google Cloud Platform**, via **Cloud
+Run**, com o modelo carregado dinamicamente de um bucket do **Cloud
+Storage** (model registry — ver [API de inferência](#api-de-inferência)).
+
+### Componentes do deploy
+
+- **Imagem Docker** ([`Dockerfile.api`](Dockerfile.api)): build
+  multi-stage, sem o modelo embutido — só código-fonte e dependências
+  de runtime (PyTorch CPU-only).
+- **Model registry** (`src/recommender/api/model_registry.py`): a API
+  baixa `model.pt`, os encoders e `vocab_sizes.json` de um bucket GCS na
+  inicialização, configurado via `MODEL_BUCKET` — promover um modelo
+  novo é só atualizar o bucket, sem rebuild/redeploy da imagem.
+- **Cloud Build**: builda e publica a imagem a partir do código-fonte.
+- **Cloud Run**: serviço serverless, escala a zero quando sem tráfego.
+
+### Reproduzindo o deploy
+
+```bash
+# 1. Criar o bucket de modelos e subir os artefatos treinados
+#    (treine antes com: poetry run dvc repro)
+gcloud storage buckets create gs://instacart-recommender-tc2-models --location=us-central1
+./scripts/upload_model_to_gcs.sh instacart-recommender-tc2-models
+
+# 2. Build e deploy da API
+gcloud builds submit --tag gcr.io/instacart-recommender-tc2/recommender-api -f Dockerfile.api
+gcloud run deploy recommender-api \
+  --image gcr.io/instacart-recommender-tc2/recommender-api \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars MODEL_BUCKET=instacart-recommender-tc2-models,MODEL_VERSION=1 \
+  --memory 1Gi --cpu 1 --port 8080
+```
+
+O comando de deploy imprime a URL pública do serviço ao final —
+documentação interativa em `<URL>/docs`.
 
 ## Licença
 
