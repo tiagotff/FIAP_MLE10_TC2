@@ -403,6 +403,8 @@ Para incluir relatório de cobertura, adicione
 | `tests/test_model_factory.py` | `ModelFactory` instancia o modelo correto a partir da config, levanta erro para `model_type` desconhecido, e aceita registro de novos modelos (Open/Closed) |
 | `tests/test_preprocessing_strategies.py` | Cada `PreprocessingStrategy` isoladamente, **e** o `FeaturePipeline` com as três estratégias combinadas — teste de integração que garante que o número de linhas se preserva ao concatenar features de estratégias diferentes |
 | `tests/test_settings.py` | `Settings` carrega defaults corretos e respeita override por variável de ambiente |
+| `tests/test_baseline.py` | Treino e cálculo de métricas do baseline (Regressão Logística) |
+| `tests/test_registry.py` | Lógica de promoção do Model Registry (Staging sempre, Production só se melhor que a atual) — via `MlflowClient` simulado |
 
 ## Dataset
 
