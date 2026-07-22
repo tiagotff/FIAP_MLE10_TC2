@@ -24,6 +24,7 @@ from recommender.data.dataset import InstacartReorderDataset
 from recommender.models.factory import ModelFactory
 from recommender.pipeline.common import build_model_config
 from recommender.pipeline.feature_eng import FEATURE_COLUMNS, LABEL_COLUMN
+from recommender.pipeline.registry import register_and_promote
 
 TRAINING_CONFIG_PATH = Path("configs/training.yaml")
 MIN_AUC_DELTA = 1e-3
@@ -254,6 +255,7 @@ def run(
         )
         mlflow.log_metric("best_val_auc", best_auc)
         mlflow.log_artifact(str(model_path))
+        register_and_promote(model_path, model_config, device, best_auc)
 
     return model_path
 
