@@ -15,6 +15,7 @@ import requests
 from app.streamlit_app import (
     CSV_REQUIRED_COLUMNS,
     DEFAULT_API_URL,
+    _classify_probability,
     call_predict,
     dataframe_to_predict_items,
     fetch_ready_status,
@@ -95,3 +96,15 @@ def test_call_predict_returns_status_code_and_body() -> None:
         status_code, body = call_predict(DEFAULT_API_URL, {"user_id": 1})
     assert status_code == 200
     assert body["reorder_probability"] == 0.7
+
+
+@pytest.mark.parametrize(
+    ("probability", "expected_class"),
+    [(0.9, "high"), (0.66, "high"), (0.5, "medium"), (0.33, "medium"), (0.1, "low")],
+)
+def test_classify_probability_thresholds(
+    probability: float, expected_class: str
+) -> None:
+    """A classificação por faixa deve respeitar os limiares 0.66/0.33."""
+    css_class, _ = _classify_probability(probability)
+    assert css_class == expected_class
