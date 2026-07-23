@@ -1,6 +1,8 @@
 # ---- Stage 1: builder ----
 # Instala as dependências via Poetry num venv isolado, sem levar
-# ferramentas de build para a imagem final.
+# ferramentas de build para a imagem final. Instala os grupos "main"
+# (torch/sklearn/pandas/etc.) e "training" (mlflow) — este último fica
+# de fora da imagem da API (Dockerfile.api), que nunca importa mlflow.
 FROM python:3.11-slim AS builder
 
 ENV POETRY_VERSION=1.8.3 \
@@ -11,10 +13,10 @@ RUN pip install "poetry==${POETRY_VERSION}"
 
 WORKDIR /app
 COPY pyproject.toml poetry.lock ./
-RUN poetry install --only main --no-root --no-interaction
+RUN poetry install --only main,training --no-root --no-interaction
 
 COPY src ./src
-RUN poetry install --only main --no-interaction
+RUN poetry install --only main,training --no-interaction
 
 # ---- Stage 2: runtime ----
 # Imagem enxuta: só o venv já resolvido + código-fonte, sem Poetry
