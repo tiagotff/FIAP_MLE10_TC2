@@ -107,25 +107,22 @@ _CUSTOM_CSS = f"""
     .result-card.low {{ background-color: #fef2f2; border-color: #dc2626; }}
     .result-card .value {{ font-size: 2.5rem; font-weight: 700; margin: 0.25rem 0; }}
     .result-card .label {{ font-size: 0.9rem; color: #4b5563; margin: 0; }}
-    .api-badge {{
-        display: inline-block; background-color: #eef2ff; color: #4338ca;
-        border-radius: 999px; padding: 0.15rem 0.7rem; font-size: 0.8rem;
-        font-family: monospace; margin-top: 0.25rem;
+    .status-line {{
+        display: flex; align-items: center; gap: 0.5rem;
+        font-size: 0.9rem; margin: 0.5rem 0 0.35rem;
     }}
-    .version-badge {{
-        display: inline-flex; align-items: center; gap: 0.4rem;
-        background-color: {_PRIMARY_COLOR}; color: white;
-        border-radius: 0.5rem; padding: 0.5rem 0.9rem;
-        font-weight: 600; font-size: 1rem; margin: 0.75rem 0;
+    .status-dot {{
+        width: 0.55rem; height: 0.55rem; border-radius: 50%; flex-shrink: 0;
     }}
-    .version-badge.unknown {{ background-color: #9ca3af; }}
+    .status-dot.online {{ background-color: {_PRIMARY_COLOR}; }}
+    .status-dot.offline {{ background-color: #dc2626; }}
     .metric-card {{
         background-color: #f8f9fa; border: 1px solid #e5e7eb;
-        border-radius: 0.5rem; padding: 0.75rem 1rem; text-align: center;
+        border-radius: 0.5rem; padding: 0.5rem 0.4rem; text-align: center;
     }}
-    .metric-card .icon {{ font-size: 1.3rem; }}
-    .metric-card .value {{ font-size: 1.5rem; font-weight: 700; margin: 0.1rem 0; }}
-    .metric-card .label {{ font-size: 0.8rem; color: #6b7280; }}
+    .metric-card .icon {{ font-size: 1.1rem; }}
+    .metric-card .value {{ font-size: 1.25rem; font-weight: 700; margin: 0.1rem 0; }}
+    .metric-card .label {{ font-size: 0.75rem; color: #6b7280; }}
 </style>
 """
 
@@ -158,19 +155,26 @@ def _render_header() -> None:
 def _render_sidebar(api_url: str) -> None:
     """Renderiza o status da conexão e o resumo do modelo na sidebar."""
     st.sidebar.markdown("### 🛒 Instacart Recommender")
-    st.sidebar.markdown(
-        f'<span class="api-badge">🔗 {api_url}</span>', unsafe_allow_html=True
-    )
 
     ready = fetch_ready_status(api_url)
-    if not (ready and ready.get("model_loaded")):
-        st.sidebar.error("❌ Não foi possível conectar à API")
+    connected = bool(ready and ready.get("model_loaded"))
+    dot = "status-dot online" if connected else "status-dot offline"
+    label = "Conectado" if connected else "Sem conexão com a API"
+    st.sidebar.markdown(
+        f'<div class="status-line"><span class="{dot}"></span>{label}</div>',
+        unsafe_allow_html=True,
+    )
+    # st.code em vez de markdown: evita o auto-link do Streamlit sobre a URL,
+    # que sobrescreveria o estilo customizado com o azul/sublinhado padrão.
+    st.sidebar.code(api_url, language=None)
+
+    if not connected:
         return
-    st.sidebar.success("✅ Modelo carregado e pronto")
 
     metadata = fetch_metadata(api_url)
     if not metadata:
         return
+    st.sidebar.divider()
     _render_sidebar_model_summary(metadata["model_info"])
 
 
@@ -184,22 +188,11 @@ def _render_metric_card(icon: str, value: str, label: str) -> str:
 
 def _render_sidebar_model_summary(info: dict[str, Any]) -> None:
     """Mostra versão, vocabulário e métricas do modelo na sidebar."""
-    st.sidebar.divider()
-
     version = info.get("model_version")
-    if version and version != "unknown":
-        st.sidebar.markdown(
-            f'<div class="version-badge">🏷️ Versão {version}</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.sidebar.markdown(
-            '<div class="version-badge unknown">🏷️ Versão não definida</div>',
-            unsafe_allow_html=True,
-        )
-        st.sidebar.caption(
-            "Defina `MODEL_VERSION` ao subir a API para exibir a versão aqui."
-        )
+    version_label = (
+        f"v{version}" if version and version != "unknown" else "ambiente local"
+    )
+    st.sidebar.caption(f"Modelo em produção · **{version_label}**")
 
     col1, col2 = st.sidebar.columns(2)
     col1.markdown(
@@ -211,17 +204,11 @@ def _render_sidebar_model_summary(info: dict[str, Any]) -> None:
         unsafe_allow_html=True,
     )
 
-    st.sidebar.write("")
     metrics = info.get("metrics") or {}
     if not metrics:
-        st.sidebar.info(
-            "📊 Métricas de validação indisponíveis — só aparecem quando "
-            "`models/model_metrics.json` existe (copie de `data/metrics.json` "
-            "após rodar o pipeline, ou publique via "
-            "`scripts/upload_model_to_gcs.sh`)."
-        )
+        st.sidebar.caption("Métricas de avaliação não publicadas neste ambiente.")
         return
-    with st.sidebar.expander("📊 Métricas de validação", expanded=True):
+    with st.sidebar.expander("📊 Métricas de validação"):
         for name, value in metrics.items():
             st.write(f"**{name.replace('_', ' ').upper()}**: {value:.4f}")
 
