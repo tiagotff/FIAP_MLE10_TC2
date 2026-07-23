@@ -400,9 +400,24 @@ resolve as dependências via Poetry, e o estágio `runtime` final carrega
 só o ambiente virtual já resolvido e o código-fonte, sem ferramentas de
 build, rodando como usuário não-root.
 
-**Otimização de tamanho da imagem:** a imagem final passou por duas
-otimizações que juntas reduziram o tamanho em ~75% (de 8,83 GB para
-2,18 GB):
+**Otimização de tamanho da imagem:** as imagens Docker passaram por
+otimizações sucessivas, medidas de ponta a ponta.
+
+**Imagem de treino** (`Dockerfile`):
+
+| Etapa | Tamanho | Redução acumulada |
+|---|---|---|
+| Ponto de partida (PyTorch com CUDA completo) | 8,83 GB | — |
+| + PyTorch CPU-only | 2,29 GB | ↓74% |
+| + DVC fora da imagem | **2,18 GB** | **↓75%** |
+
+**Imagem da API** (`Dockerfile.api`, criada já com PyTorch CPU-only e
+sem DVC desde o início — por isso parte direto de 2,18 GB):
+
+| Etapa | Tamanho | Redução acumulada (vs. 8,83 GB) |
+|---|---|---|
+| Ponto de partida (equivalente à imagem de treino já otimizada) | 2,18 GB | ↓75% |
+| + MLflow fora da imagem | **1,61 GB** | **↓82%** |
 
 - **PyTorch CPU-only**: o `pyproject.toml` aponta o `torch` para o
   índice `https://download.pytorch.org/whl/cpu` — sem isso, o Poetry
@@ -412,11 +427,18 @@ otimizações que juntas reduziram o tamanho em ~75% (de 8,83 GB para
 - **DVC fora da imagem**: `dvc` mora num grupo Poetry separado
   (`[tool.poetry.group.cli]`), não no grupo `main`. Nenhum script em
   `src/recommender` importa `dvc` — é só a ferramenta de linha de
-  comando que orquestra o pipeline, e o `Dockerfile` instala apenas
-  `--only main`, então ela nunca entra na imagem. Continua instalada
-  normalmente no ambiente local (`poetry install`, sem `--only`,
-  instala todos os grupos), então `poetry run dvc repro` funciona
-  igual.
+  comando que orquestra o pipeline. Nem o `Dockerfile` de treino nem o
+  `Dockerfile.api` instalam esse grupo. Continua instalado normalmente
+  no ambiente local (`poetry install`, sem `--only`, instala todos os
+  grupos), então `poetry run dvc repro` funciona igual.
+- **MLflow fora da imagem da API**: análise de imports confirmou que
+  nenhum arquivo em `src/recommender/api/` importa `mlflow`, direta ou
+  indiretamente — só os scripts de `src/recommender/pipeline/`
+  (treino/avaliação/registry) usam. Por isso `mlflow` mora num grupo
+  próprio (`[tool.poetry.group.training]`); o `Dockerfile` de treino
+  instala `--only main,training`, e o `Dockerfile.api` instala só
+  `--only main,api` — o `mlflow` (e sua árvore pesada de dependências:
+  Flask, SQLAlchemy, matplotlib, etc.) nunca entra na imagem da API.
 
 ## API de inferência
 
@@ -723,6 +745,16 @@ registra automaticamente uma nova versão do modelo
 
 Consulte as versões registradas na UI do MLflow
 (`http://localhost:5001` → aba **Models**).
+
+**Evidência real da proteção funcionando**: ao retreinar o modelo após
+uma otimização de dependências (sem mudança de dados/arquitetura), a
+versão 2 obteve o mesmo AUC da versão 1 (0,9045) — como não superou
+estritamente a versão em Production, o sistema corretamente manteve a
+v2 em Staging, sem promovê-la:
+
+```
+[registry] v2 fica em Staging (auc=0.9045 <= produção 0.9045)
+```
 
 ---
 
