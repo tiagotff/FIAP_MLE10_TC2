@@ -118,6 +118,10 @@ PyTorch, rastreamento de experimentos no MLflow, versionamento de dados
 com DVC e empacotamento em containers Docker — com boas práticas de
 clean code, reprodutibilidade e testes.
 
+📊 **Apresentação completa** (método STAR):
+[`docs/Apresentacao_Tech_Challenge_2_10MLE_FIAP.pdf`](docs/Apresentacao_Tech_Challenge_2_10MLE_FIAP.pdf)
+([versão editável em `.pptx`](docs/Apresentacao_Tech_Challenge_2_10MLE_FIAP.pptx))
+
 O sinal de recomendação usado é a probabilidade de **recompra**
 (`reordered`): para cada combinação usuário-produto observada no
 histórico, o modelo prevê a chance desse produto ser pedido de novo,
@@ -194,7 +198,9 @@ alimentando um ranking de sugestões no momento da compra.
 │   ├── __init__.py
 │   └── streamlit_app.py          # Dashboard Streamlit (cliente visual da API)
 ├── docs/
-│   └── Tech_Challenge_Fase_02.pdf  # Enunciado oficial do desafio (material FIAP — ver Licença)
+│   ├── Tech_Challenge_Fase_02.pdf  # Enunciado oficial do desafio (material FIAP — ver Licença)
+│   ├── Apresentacao_Tech_Challenge_2_10MLE_FIAP.pptx  # Apresentação final (método STAR)
+│   └── Apresentacao_Tech_Challenge_2_10MLE_FIAP.pdf   # Mesma apresentação, em PDF
 ├── Dockerfile                    # Build multi-stage (builder + runtime) — treino
 ├── Dockerfile.api                # Build multi-stage — API de inferência
 ├── Dockerfile.streamlit          # Build multi-stage — dashboard
